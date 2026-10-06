@@ -1,0 +1,74 @@
+name: Build
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          # PyInstaller builds for the CPU of the machine it runs on,
+          # so each architecture needs its own runner
+          - os: macos-latest # Apple Silicon
+            target: macOS-arm64
+            pyinstaller-args: --windowed
+          - os: macos-15-intel # Intel; GitHub's last Intel image, supported until Aug 2027
+            target: macOS-x86_64
+            pyinstaller-args: --windowed
+          - os: windows-latest
+            target: Windows-x64
+            pyinstaller-args: --windowed --onefile
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Build with PyInstaller
+        shell: bash
+        run: >
+          pyinstaller --noconfirm ${{ matrix.pyinstaller-args }}
+          --name "UUID Renamer"
+          --icon assets/icon.png
+          --add-data "assets:assets"
+          --collect-all desktop_notifier
+          --osx-bundle-identifier com.example.uuid-renamer
+          app.py
+
+      - name: Package (macOS)
+        if: runner.os == 'macOS'
+        # ditto keeps the symlinks inside the .app intact; plain zip would break them
+        run: |
+          file "dist/UUID Renamer.app/Contents/MacOS/UUID Renamer"
+          ditto -c -k --keepParent "dist/UUID Renamer.app" UUID-Renamer-${{ matrix.target }}.zip
+
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: mv "dist/UUID Renamer.exe" UUID-Renamer-${{ matrix.target }}.exe
+
+      - uses: actions/upload-artifact@v7
+        with:
+          path: UUID-Renamer-*
+          # Without this, GitHub wraps every artifact in its own zip, so the
+          # macOS download would be a zip inside a zip. With `archive: false`
+          # the .zip / .exe is uploaded as-is, named after the file.
+          archive: false
+
+      - name: Attach to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v3
+        with:
+          files: UUID-Renamer-*

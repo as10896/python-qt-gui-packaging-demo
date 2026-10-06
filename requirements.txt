@@ -1,0 +1,7 @@
+# Pinned so every build (local or CI) packages the same versions into the app
+PySide6-Essentials==6.11.2
+desktop-notifier==6.2.0
+
+# Only needed for packaging
+pyinstaller==6.22.3
+pillow==12.3.0
