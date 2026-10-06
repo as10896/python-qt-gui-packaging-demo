@@ -52,26 +52,48 @@
 ├── renamer.py          # 改名的核心邏輯，不依賴 GUI，也可以當 CLI 用
 ├── assets/icon.png     # App 圖示，視窗和通知也會用到
 ├── docs/               # README 用的截圖
-├── requirements.txt
+├── pyproject.toml      # 相依套件清單
+├── uv.lock             # 每個套件的精確版本，由 uv 自動產生
+├── .python-version     # 使用的 Python 版本（3.12）
 └── .github/workflows/build.yml   # 在 GitHub Actions 上打包 .app 和 .exe
 ```
 
 刻意把改名邏輯從 GUI 拆出來放在 `renamer.py`，好處是方便測試，也可以單獨在終端機使用：
 
 ```bash
-python renamer.py photo.jpg some-folder/
+uv run renamer.py photo.jpg some-folder/
 ```
 
 ## 從原始碼執行
 
-需要 Python 3.10 以上。
+這個專案用 [uv](https://docs.astral.sh/uv/) 來管理 Python 版本和相依套件。先[安裝 uv](https://docs.astral.sh/uv/getting-started/installation/)，接著只要：
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate        # Windows 請改用 .venv\Scripts\activate
-pip install -r requirements.txt
-python app.py
+uv run app.py
 ```
+
+就這樣。第一次執行時，如果電腦上沒有 Python 3.12，uv 會自動下載，接著建立 `.venv/`，並依照 `uv.lock` 安裝所有套件。
+
+### 為什麼需要 lock file？
+
+`pyproject.toml` 裡的套件只寫了名稱和最低版本。`uv.lock` 則記錄了每個套件的精確版本和 hash，連套件自己的相依套件也包含在內，而且同時涵蓋 macOS 和 Windows。
+
+一般的 Python 專案有 lock file 是加分；但要打包成 App 的專案，就幾乎是必要的。因為打包時裝了哪些版本，就會原封不動地凍結進 App 裡。如果沒有鎖定版本，下個月重新打包時可能就裝到新版的 PySide6 或 PyInstaller，結果打包失敗；macOS 版和 Windows 版也可能裝到不同的版本。有了 lock file，不管是在本機還是在 CI 打包，裝到的套件都會一模一樣。
+
+相依套件分成兩組：
+
+- `dependencies`：App 執行時需要的套件（PySide6、desktop-notifier）
+- `build` 群組：只有打包時才需要的套件（PyInstaller、Pillow）。`pyproject.toml` 裡用 `default-groups` 設定成預設會一起安裝。
+
+常用指令：
+
+```bash
+uv add some-package            # 新增 App 執行時需要的套件
+uv add --group build some-tool # 新增只有打包時才需要的套件
+uv lock --upgrade              # 把所有套件升級到最新版（升級後記得重新打包測試）
+```
+
+> 習慣用 pip 嗎？這個 repo 的第一個 commit 用的是有鎖定版本的 `requirements.txt`，可以參考那個版本。也可以用 `uv export --format requirements-txt` 從 lock file 產生一份。
 
 ## 打包成 App
 
@@ -82,7 +104,7 @@ PyInstaller 會把你的程式碼、Python 直譯器和所有相依套件包在�
 ### macOS
 
 ```bash
-pyinstaller --noconfirm --windowed \
+uv run pyinstaller --noconfirm --windowed \
   --name "UUID Renamer" \
   --icon assets/icon.png \
   --add-data "assets:assets" \
@@ -96,7 +118,7 @@ pyinstaller --noconfirm --windowed \
 ### Windows
 
 ```powershell
-pyinstaller --noconfirm --windowed --onefile --name "UUID Renamer" --icon assets/icon.png --add-data "assets:assets" --collect-all desktop_notifier app.py
+uv run pyinstaller --noconfirm --windowed --onefile --name "UUID Renamer" --icon assets/icon.png --add-data "assets:assets" --collect-all desktop_notifier app.py
 ```
 
 完成後會產生 `dist\UUID Renamer.exe`。
@@ -108,7 +130,7 @@ pyinstaller --noconfirm --windowed --onefile --name "UUID Renamer" --icon assets
 | `--windowed` | 執行時不要多開一個終端機視窗。在 macOS 上也會因此產生 `.app`。 |
 | `--onefile` | （只用在 Windows）把所有東西包成單一個 `.exe`，比較好分享。缺點是每次啟動都要先解壓縮到暫存資料夾，會多等幾秒。macOS 的 `.app` 本來就是一個可以整個拖來拖去的東西，所以不需要這個參數。 |
 | `--name` | App 或 exe 的名稱。 |
-| `--icon` | App 圖示。PyInstaller 會自動把 PNG 轉成 `.icns` 或 `.ico`，這也是 `requirements.txt` 裡放了 `pillow` 的原因。 |
+| `--icon` | App 圖示。PyInstaller 會自動把 PNG 轉成 `.icns` 或 `.ico`，這也是 `build` 群組裡放了 `pillow` 的原因。 |
 | `--add-data "assets:assets"` | 把 `assets/` 資料夾一起包進去，因為程式執行時會讀取 `icon.png`。 |
 | `--collect-all desktop_notifier` | `desktop-notifier` 有些檔案的載入方式 PyInstaller 偵測不到。少了這個參數，打包出來的 App 一打開就會閃退，錯誤訊息是 `No module named 'desktop_notifier.resources'`。 |
 | `--osx-bundle-identifier` | App 在 macOS 上的唯一識別碼，記得把 `com.example` 換成你自己的網域。 |
@@ -165,7 +187,7 @@ PyInstaller 執行時也會產生一個 `UUID Renamer.spec` 設定檔。參數�
 
 ### macOS 上的通知
 
-這個 App 用 [desktop-notifier](https://github.com/samschott/desktop-notifier) 發送原生通知，但 macOS 只允許**有 Apple Developer ID 簽章**的 App 使用通知中心。沒簽章的 App 會被拒絕；直接跑 `python app.py` 也不行，因為那根本不是一個 App bundle。
+這個 App 用 [desktop-notifier](https://github.com/samschott/desktop-notifier) 發送原生通知，但 macOS 只允許**有 Apple Developer ID 簽章**的 App 使用通知中心。沒簽章的 App 會被拒絕；直接跑 `uv run app.py` 也不行，因為那根本不是一個 App bundle。
 
 所以 `app.py` 在 macOS 上會先檢查能不能發原生通知，不行的話就改用 AppleScript（`osascript`）。通知一樣會跳出來，只是圖示會變成「工序指令編寫程式」，而不是這個 App 的圖示。等 App 有了正式簽章，就會自動改用原生通知。Windows 沒有這個限制。
 

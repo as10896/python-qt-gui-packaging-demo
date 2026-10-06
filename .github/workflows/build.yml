@@ -29,17 +29,19 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v7
-        with:
-          python-version: "3.12"
+      # Installs uv; uv then fetches the Python version in .python-version.
+      # setup-uv doesn't publish moving major tags like `v10`, so pin a full
+      # release by commit SHA, as its README recommends.
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
 
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        # --locked: fail if uv.lock is out of date instead of silently re-resolving
+        run: uv sync --locked
 
       - name: Build with PyInstaller
         shell: bash
         run: >
-          pyinstaller --noconfirm ${{ matrix.pyinstaller-args }}
+          uv run --locked pyinstaller --noconfirm ${{ matrix.pyinstaller-args }}
           --name "UUID Renamer"
           --icon assets/icon.png
           --add-data "assets:assets"

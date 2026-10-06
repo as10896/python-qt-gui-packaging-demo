@@ -1,0 +1,19 @@
+[project]
+name = "python-qt-gui-packaging-demo"
+version = "0.1.0"
+description = "Demo: build a Python Qt GUI and package it as a macOS app and Windows exe"
+requires-python = ">=3.12"
+dependencies = [
+    "desktop-notifier>=6.2.0",
+    "pyside6-essentials>=6.11.2",
+]
+
+[dependency-groups]
+build = [
+    "pillow>=12.3.0",
+    "pyinstaller>=6.22.3",
+]
+
+[tool.uv]
+# `uv sync` / `uv run` install the build tools too, so packaging just works
+default-groups = ["build"]
